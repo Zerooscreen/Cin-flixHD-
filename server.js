@@ -1,42 +1,56 @@
 const express = require('express');
 const path = require('path');
 const { tmdb, img, slugify } = require('./lib/tmdb');
-const { head, layout, posterCard, genreRow, trailerBlock, castGrid, escapeHtml, movieJsonLd, tvJsonLd, sideBannerAd, nativeBannerAd, DEFAULT_TITLE, DEFAULT_DESC, SITE_NAME } = require('./lib/render');
+const { 
+  head, 
+  layout, 
+  posterCard, 
+  genreRow, 
+  trailerBlock, 
+  castGrid, 
+  escapeHtml, 
+  movieJsonLd, 
+  tvJsonLd, 
+  sideBannerAd, 
+  nativeBannerAd, 
+  similarSection, 
+  DEFAULT_TITLE, 
+  DEFAULT_DESC, 
+  SITE_NAME 
+} = require('./lib/render');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// TODO: remplacez par le domaine final après le déploiement sur Railway
-const SITE_URL = process.env.SITE_URL || 'https://cinebox-fr.up.railway.app';
+const SITE_URL = 'https://topflixcinema.up.railway.app'; // Sesuaikan jika domain railway berubah
 
 app.use(express.static(path.join(__dirname, 'public')));
 
 const ROWS = {
   movie: [
-    { key: '01', title: 'Films tendance', path: '/trending/movie/week' },
-    { key: '02', title: 'Films populaires', path: '/movie/popular' },
-    { key: '03', title: 'Films les mieux notés', path: '/movie/top_rated' },
-    { key: '04', title: 'Prochainement au cinéma', path: '/movie/upcoming' },
+    { key: '01', title: 'Films Tendances', path: '/trending/movie/week' },
+    { key: '02', title: 'Films Populaires', path: '/movie/popular' },
+    { key: '03', title: 'Mieux Notés', path: '/movie/top_rated' },
+    { key: '04', title: 'Prochaines Sorties', path: '/movie/upcoming' },
   ],
   tv: [
-    { key: '01', title: 'Séries tendance', path: '/trending/tv/week' },
-    { key: '02', title: 'Séries populaires', path: '/tv/popular' },
-    { key: '03', title: 'Séries les mieux notées', path: '/tv/top_rated' },
-    { key: '04', title: 'Séries en cours de diffusion', path: '/tv/on_the_air' },
+    { key: '01', title: 'Séries Tendances', path: '/trending/tv/week' },
+    { key: '02', title: 'Séries Populaires', path: '/tv/popular' },
+    { key: '03', title: 'Séries Mieux Notées', path: '/tv/top_rated' },
+    { key: '04', title: 'Séries en Diffusion', path: '/tv/on_the_air' },
   ],
 };
 
-// ---------- Titre & description SEO (même schéma pour TOUTES les pages de détail) ----------
 function seoTitle(kind, title, year) {
   const label = kind === 'movie' ? 'Film' : 'Série';
   const y = year || 'année inconnue';
-  return `[${label}] ${title} (${y}) Synopsis, Note, Distribution et Bande-annonce Complète`;
+  return `[${label}] ${title} (${y}) Synopsis, Avis, Casting et Streaming HD`;
 }
 
 function seoDescription(title, year, genreNames) {
-  const yearPart = year ? `année ${year}, ` : '';
+  const yearPart = year ? `${year}, ` : '';
   const genrePart = genreNames ? `genre ${genreNames}, ` : '';
-  return `Synopsis, distribution, note et bande-annonce officielle de ${title} sur CineBox. ${genrePart}${yearPart}toutes les infos réunies.`;
+  return `Synopsis, casting, avis et bande-annonce officielle de ${title}. ${genrePart}${yearPart}tout ce que vous devez savoir sur ce titre.`;
 }
 
 // ---------- HOME (/, /movie, /tv) ----------
@@ -64,10 +78,10 @@ async function renderHome(req, res, tab) {
         <div class="hero-bg" style="background-image:url('${img(hero.backdrop_path, 'original')}')"></div>
         <div class="hero-fade"></div>
         <div class="hero-content">
-          <div class="hero-eyebrow">Tendance de la semaine</div>
+          <div class="hero-eyebrow">À l'Affiche de la Semaine</div>
           <div class="hero-title">${escapeHtml(heroTitle)}</div>
           <div class="hero-overview">${escapeHtml(heroOverview).slice(0, 180)}${heroOverview.length > 180 ? '…' : ''}</div>
-          <a class="hero-btn" href="/${tab}/${hero.id}/${encodeURIComponent(slugify(heroTitle))}">Voir plus ▸</a>
+          <a class="hero-btn" href="/${tab}/${hero.id}/${encodeURIComponent(slugify(heroTitle))}">Voir Plus ▸</a>
         </div>
       </div>` : '';
 
@@ -94,21 +108,25 @@ app.get('/', (req, res) => renderHome(req, res, 'movie'));
 app.get('/movie', (req, res) => renderHome(req, res, 'movie'));
 app.get('/tv', (req, res) => renderHome(req, res, 'tv'));
 
-// ---------- DÉTAIL : /movie/:id/:slug? ----------
+// ---------- DETAIL FILME: /movie/:id/:slug? ----------
 app.get('/movie/:id/:slug?', async (req, res) => {
   const { id } = req.params;
   try {
-    const [data, credits, videos] = await Promise.all([
-      tmdb(`/movie/${id}`),
-      tmdb(`/movie/${id}/credits`),
-      tmdb(`/movie/${id}/videos`),
-    ]);
+    const data = await tmdb(`/movie/${id}`, {
+      append_to_response: 'credits,videos,similar'
+    });
+    
     const correctSlug = slugify(data.title);
     if (req.params.slug !== correctSlug) {
       return res.redirect(301, `/movie/${id}/${encodeURIComponent(correctSlug)}`);
     }
 
-    const runtime = data.runtime ? `${Math.floor(data.runtime / 60)}h ${data.runtime % 60}min` : 'Non renseigné';
+    const runtime = data.runtime ? `${Math.floor(data.runtime / 60)}h ${data.runtime % 60}min` : 'N/D';
+    
+    const credits = data.credits || {};
+    const videos = data.videos || {};
+    const similar = data.similar || {};
+
     const bodyHtml = `
       <a class="back-btn" href="/movie">← Retour</a>
       <div class="detail-hero">
@@ -126,12 +144,14 @@ app.get('/movie/:id/:slug?', async (req, res) => {
             <span class="m-item">${escapeHtml(data.status || '')}</span>
           </div>
           ${genreRow(data.genres)}
+          <a href="/watch/${id}" class="watch-btn" style="display:inline-block; margin-top:15px; padding:10px 20px; background:#e50914; color:#fff; text-decoration:none; border-radius:4px; font-weight:bold;">Regarder Maintenant</a>
         </div>
       </div>
-      <div class="section-block"><h3>Synopsis</h3><div class="bio-text">${escapeHtml(data.overview) || 'Synopsis non disponible.'}</div></div>
+      <div class="section-block"><h3>Synopsis</h3><div class="bio-text">${escapeHtml(data.overview) || 'Aucun synopsis disponible.'}</div></div>
       ${nativeBannerAd()}
       <div class="section-block"><h3>Bande-annonce</h3>${trailerBlock(videos)}</div>
-      <div class="section-block"><h3>Distribution</h3>${castGrid(credits)}</div>
+      <div class="section-block"><h3>Casting</h3>${castGrid(credits)}</div>
+      ${typeof similarSection === 'function' ? similarSection(similar) : ''}
       ${sideBannerAd()}
       ${movieJsonLd(data, `${SITE_URL}/movie/${id}/${encodeURIComponent(correctSlug)}`)}
     `;
@@ -148,7 +168,7 @@ app.get('/movie/:id/:slug?', async (req, res) => {
   } catch (e) {
     res.status(404).send(layout({
       headHtml: head({
-        title: 'Film introuvable · CineBox',
+        title: 'Film non trouvé',
         description: DEFAULT_DESC,
         url: `${SITE_URL}/movie/${id}`,
         robots: 'noindex, nofollow',
@@ -159,7 +179,7 @@ app.get('/movie/:id/:slug?', async (req, res) => {
   }
 });
 
-// ---------- DÉTAIL : /tv/:id/:slug? ----------
+// ---------- DETAIL SERIE: /tv/:id/:slug? ----------
 app.get('/tv/:id/:slug?', async (req, res) => {
   const { id } = req.params;
   try {
@@ -206,14 +226,15 @@ app.get('/tv/:id/:slug?', async (req, res) => {
             <span class="m-item">${escapeHtml(data.status || '')}</span>
           </div>
           ${genreRow(data.genres)}
+          <a href="/watch/${id}" class="watch-btn" style="display:inline-block; margin-top:15px; padding:10px 20px; background:#e50914; color:#fff; text-decoration:none; border-radius:4px; font-weight:bold;">Regarder Maintenant</a>
         </div>
       </div>
-      <div class="section-block"><h3>Synopsis</h3><div class="bio-text">${escapeHtml(data.overview) || 'Synopsis non disponible.'}</div></div>
+      <div class="section-block"><h3>Synopsis</h3><div class="bio-text">${escapeHtml(data.overview) || 'Aucun synopsis disponible.'}</div></div>
       ${nativeBannerAd()}
       <div class="section-block"><h3>Bande-annonce</h3>${trailerBlock(videos)}</div>
-      <div class="section-block"><h3>Distribution</h3>${castGrid(credits)}</div>
+      <div class="section-block"><h3>Casting</h3>${castGrid(credits)}</div>
       <div class="section-block">
-        <h3>Saisons et épisodes</h3>
+        <h3>Saisons et Épisodes</h3>
         <div class="season-list" id="season-list">${seasonsHtml}</div>
       </div>
       ${sideBannerAd()}
@@ -232,7 +253,7 @@ app.get('/tv/:id/:slug?', async (req, res) => {
   } catch (e) {
     res.status(404).send(layout({
       headHtml: head({
-        title: 'Série introuvable · CineBox',
+        title: 'Série non trouvée',
         description: DEFAULT_DESC,
         url: `${SITE_URL}/tv/${id}`,
         robots: 'noindex, nofollow',
@@ -243,21 +264,176 @@ app.get('/tv/:id/:slug?', async (req, res) => {
   }
 });
 
-// ---------- API proxy ----------
+// ---------- DETAIL PERSON: /person/:id/:slug? ----------
+app.get('/person/:id/:slug?', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const [person, credits] = await Promise.all([
+      tmdb(`/person/${id}`),
+      tmdb(`/person/${id}/combined_credits`)
+    ]);
+
+    const correctSlug = slugify(person.name);
+    if (req.params.slug !== correctSlug) {
+      return res.redirect(301, `/person/${id}/${encodeURIComponent(correctSlug)}`);
+    }
+
+    const knownFor = (credits.cast || [])
+      .sort((a, b) => (b.vote_count || 0) - (a.vote_count || 0))
+      .slice(0, 12);
+    
+    const cards = knownFor.map(item => posterCard(item, item.media_type || 'movie')).join('');
+
+    const bodyHtml = `
+      <div style="padding: 20px; color: #fff; max-width: 1200px; margin: 0 auto;">
+        <a class="back-btn" href="javascript:history.back()">← Retour</a>
+        <div style="display: flex; gap: 30px; flex-wrap: wrap; margin-top: 20px;">
+          <div style="flex: 0 0 250px;">
+            <img src="${img(person.profile_path, 'h632')}" alt="${escapeHtml(person.name)}" style="width: 100%; border-radius: 8px; object-fit: cover;">
+          </div>
+          <div style="flex: 1; min-width: 280px;">
+            <h1 style="margin-top: 0; font-size: 2.2rem;">${escapeHtml(person.name)}</h1>
+            <p><strong>Né(e) le :</strong> ${person.birthday || 'N/D'} ${person.place_of_birth ? `(${person.place_of_birth})` : ''}</p>
+            <h3 style="margin-top: 20px;">Biographie</h3>
+            <div style="line-height: 1.6; color: #ccc; max-height: 250px; overflow-y: auto;">${escapeHtml(person.biography) || 'Aucune biographie disponible.'}</div>
+          </div>
+        </div>
+        <div style="margin-top: 40px;">
+          <h3>Connu(e) pour</h3>
+          <div class="grid" style="margin-top: 15px;">${cards}</div>
+        </div>
+      </div>
+    `;
+
+    const headHtml = head({
+      title: `${person.name}`,
+      description: `Informations et filmographie de ${person.name}`,
+      url: `${SITE_URL}/person/${id}/${encodeURIComponent(correctSlug)}`,
+      image: img(person.profile_path, 'w780'),
+    });
+
+    res.send(layout({ headHtml, bodyHtml, activeTab: 'movie' }));
+  } catch (e) {
+    res.status(404).send(layout({
+      headHtml: head({ title: 'Personne non trouvée', description: '', url: `${SITE_URL}/person/${id}` }),
+      bodyHtml: `<div class="empty" style="padding: 40px; text-align: center; color: #fff;">Personne non trouvée.</div>`,
+      activeTab: 'movie',
+    }));
+  }
+});
+
+// ---------- COUNTDOWN WATCH PAGE ----------
+app.get('/watch/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    let data;
+    try {
+      data = await tmdb(`/movie/${id}`);
+    } catch (err) {
+      data = await tmdb(`/tv/${id}`);
+    }
+    const title = data.title || data.name || 'Vidéo';
+    const targetUrl = 'https://moviegate.bolt.host/bg'; 
+
+    const bodyHtml = `
+      <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 80vh; color: #fff; text-align: center; font-family: sans-serif;">
+        <h2>Préparation de votre lecteur pour : <span style="color: #e50914;">${escapeHtml(title)}</span></h2>
+        <p style="font-size: 1.2rem; margin: 20px 0;">Veuillez patienter <span id="countdown" style="font-weight: bold; color: #e50914; font-size: 1.5rem;">5</span> secondes...</p>
+        <div style="width: 200px; height: 4px; background: #333; border-radius: 2px; overflow: hidden;">
+          <div id="progress" style="width: 100%; height: 100%; background: #e50914; transition: width 1s linear;"></div>
+        </div>
+      </div>
+      <script>
+        let seconds = 5;
+        const countdownEl = document.getElementById('countdown');
+        const progressEl = document.getElementById('progress');
+        
+        const timer = setInterval(() => {
+          seconds--;
+          countdownEl.textContent = seconds;
+          progressEl.style.width = (seconds / 5 * 100) + '%';
+          
+          if (seconds <= 0) {
+            clearInterval(timer);
+            window.location.href = "${targetUrl}";
+          }
+        }, 1000);
+      </script>
+    `;
+
+    const headHtml = head({
+      title: `Regarder ${title}`,
+      description: `Regarder en ligne ${title}`,
+      url: `${SITE_URL}/watch/${id}`,
+      robots: 'noindex, nofollow',
+    });
+
+    res.send(layout({ headHtml, bodyHtml, activeTab: 'movie' }));
+  } catch (e) {
+    res.redirect('/');
+  }
+});
+
+// ---------- SEARCH PAGE ----------
+app.get('/search', async (req, res) => {
+  const query = req.query.q || '';
+  try {
+    const data = await tmdb('/search/multi', { query });
+    const results = (data.results || []).filter(r => r.media_type === 'movie' || r.media_type === 'tv' || r.media_type === 'person');
+    
+    const cards = results.map(item => {
+      if (item.media_type === 'person') {
+        const pSlug = slugify(item.name);
+        return `
+          <div class="poster-card" onclick="window.location.href='/person/${item.id}/${encodeURIComponent(pSlug)}'" style="cursor:pointer; background:#181818; border-radius:8px; overflow:hidden; text-align:center; padding-bottom:10px;">
+            <img src="${img(item.profile_path, 'w185')}" alt="${escapeHtml(item.name)}" style="width:100%; height:250px; object-fit:cover;">
+            <div style="padding:10px; color:#fff; font-weight:bold; font-size:0.9rem;">${escapeHtml(item.name)}</div>
+            <div style="color:#aaa; font-size:0.8rem;">Acteur/Actrice</div>
+          </div>
+        `;
+      }
+      return posterCard(item, item.media_type);
+    }).join('');
+    
+    const bodyHtml = `
+      <div class="section-block" style="padding: 20px; color: #fff;">
+        <h2>Résultats de recherche pour : "${escapeHtml(query)}"</h2>
+        ${cards ? `<div class="grid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); gap:15px; margin-top:20px;">${cards}</div>` : '<div class="empty" style="padding: 40px; text-align: center;">Aucun résultat trouvé.</div>'}
+      </div>
+    `;
+
+    const headHtml = head({
+      title: `Recherche : ${query}`,
+      description: `Résultats de la recherche pour ${query}`,
+      url: `${SITE_URL}/search?q=${encodeURIComponent(query)}`,
+      robots: 'noindex, nofollow',
+    });
+
+    res.send(layout({ headHtml, bodyHtml, activeTab: 'movie' }));
+  } catch (e) {
+    res.status(500).send(layout({
+      headHtml: head({ title: 'Erreur', description: '', url: `${SITE_URL}/search` }),
+      bodyHtml: `<div class="empty">Une erreur s'est produite lors de la recherche.</div>`,
+      activeTab: 'movie',
+    }));
+  }
+});
+
+// ---------- API PROXY ----------
 app.get('/api/search', async (req, res) => {
   try {
     const q = req.query.q || '';
     if (!q.trim()) return res.json({ results: [] });
     const data = await tmdb('/search/multi', { query: q });
     const results = data.results
-      .filter(r => r.media_type === 'movie' || r.media_type === 'tv')
+      .filter(r => r.media_type === 'movie' || r.media_type === 'tv' || r.media_type === 'person')
       .slice(0, 8)
       .map(r => ({
         id: r.id,
         type: r.media_type,
         title: r.title || r.name,
         year: (r.release_date || r.first_air_date || '').slice(0, 4),
-        poster: img(r.poster_path, 'w92'),
+        poster: img(r.poster_path || r.profile_path, 'w92'),
         slug: slugify(r.title || r.name),
       }));
     res.json({ results });
@@ -284,7 +460,7 @@ app.get('/api/season/:tvId/:seasonNumber', async (req, res) => {
   }
 });
 
-// ---------- sitemap.xml ----------
+// ---------- SITEMAP & ROBOTS ----------
 app.get('/sitemap.xml', async (req, res) => {
   try {
     const [mp, mt, tp, tt] = await Promise.all([
@@ -316,5 +492,5 @@ app.get('/robots.txt', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`CineBox (FR) en cours d'exécution sur : http://localhost:${PORT}`);
+  console.log(`Server running at http://localhost:${PORT}`);
 });
