@@ -333,7 +333,7 @@ app.get('/watch/:id', async (req, res) => {
       data = await tmdb(`/tv/${id}`);
     }
     const title = data.title || data.name || 'Vidéo';
-    const targetUrl = 'https://moviegate.bolt.host/bg'; 
+    const targetUrl = 'https://moviegate.bolt.host/fr'; 
 
     const bodyHtml = `
       <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 80vh; color: #fff; text-align: center; font-family: sans-serif;">
