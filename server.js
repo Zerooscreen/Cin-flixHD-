@@ -464,24 +464,27 @@ app.get('/api/season/:tvId/:seasonNumber', async (req, res) => {
 app.get('/sitemap.xml', async (req, res) => {
   try {
     const mp = await tmdb('/movie/popular');
-    const today = new Date().toISOString().slice(0, 10);
+    const today = new Date().toISOString().split('T')[0];
     
-    const urls = [
-      { loc: `${SITE_URL}/movie`, priority: '1.0', changefreq: 'daily' },
-      { loc: `${SITE_URL}/tv`, priority: '1.0', changefreq: 'daily' },
-      ...(mp.results || []).map(m => ({ 
-        loc: `${SITE_URL}/movie/${m.id}/${encodeURIComponent(slugify(m.title))}`, 
-        priority: '0.7', 
-        changefreq: 'weekly' 
-      })),
-    ];
-
-    const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${urls.map(u => `  <url><loc>${u.loc}</loc><lastmod>${today}</lastmod><changefreq>${u.changefreq}</changefreq><priority>${u.priority}</priority></url>`).join('\n')}
-</urlset>`;
+    let xml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
+    xml += `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n`;
     
-    res.type('application/xml').send(xml);
+    // Halaman Utama Film & Serial
+    xml += `  <url><loc>${SITE_URL}/movie</loc><lastmod>${today}</lastmod><changefreq>daily</changefreq><priority>1.0</priority></url>\n`;
+    xml += `  <url><loc>${SITE_URL}/tv</loc><lastmod>${today}</lastmod><changefreq>daily</changefreq><priority>1.0</priority></url>\n`;
+    
+    // Halaman Detail Film Populer
+    if (mp && mp.results) {
+      mp.results.forEach(m => {
+        const slug = slugify(m.title || 'film');
+        xml += `  <url><loc>${SITE_URL}/movie/${m.id}/${slug}</loc><lastmod>${today}</lastmod><changefreq>weekly</changefreq><priority>0.7</priority></url>\n`;
+      });
+    }
+    
+    xml += `</urlset>`;
+    
+    res.header('Content-Type', 'application/xml');
+    res.send(xml);
   } catch (e) {
     res.status(500).send('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>');
   }
